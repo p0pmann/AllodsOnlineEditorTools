@@ -57,6 +57,11 @@ public class BinaryClient17Tests
             {
                 Assert.That(database.Metadata.Fixes[i * 8], Is.EqualTo(new PointerFix(types[i], i == 1, 64 + i)));
             }
+            var paths = DatabaseLoader.LoadPathMetadata(path, NullLoggerFactory.Instance).Single().Value;
+            Assert.That(paths.Version, Is.EqualTo(database.Metadata.Version));
+            Assert.That(paths.Fixes.Keys, Is.EquivalentTo(new long[] { 32 }));
+            Assert.That(paths.Fixes[32], Is.EqualTo(database.Metadata.Fixes[32]));
+            Assert.That(DatabaseLoader.LoadPathMetadata(path, NullLoggerFactory.Instance, ["unrelated.bin"]), Is.Empty);
         }
         finally { File.Delete(path); }
     }

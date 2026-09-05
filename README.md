@@ -53,10 +53,9 @@ command that takes one.
 | Allods Online | `4.0.02.4x`    | ✅ Supported                              |
 | Allods Online | `7.0.00.7x`    | ✅ Supported                              |
 | Allods Online | `14.0.01.71`   | ✅ Supported                              |
-| Cloud Pirates | `1.7.7`        | 🚧 Parsing only, no unpack                |
 | Allods Online | `17.0.01.49`   | ✅ Supported                              |
 | Allods Online | `17.0.01.55`   | 🚧 Parsing only, no unpack                |
-
+| Cloud Pirates | `1.7.7`        | 🚧 Parsing only, no unpack                |
 
 ### Cross-version casting (`--as`)
 
@@ -161,29 +160,26 @@ EditorCLI info versions
 
 Run any command with `--help` for its full set of options.
 
-### 17.x clients
+### 15.x+ clients
 
-17.0.01.49 exports use recovered x64 layouts, localization tables, and pak entry
-indices. Most original source paths were stripped by the client build. Unnamed
-resources receive stable `__generated/<database>/obj-<id>.xdb` paths, and pointers
-use those same paths. These are export identities, not recovered source names.
+Clients from version 15 onward strip most resource pathnames. Pass
+`--paths-from` with a 14.0.01.77 Bin directory, `pack.bin`, or pak containing `Bin`
+to restore names from matching resource IDs and types. For remaining assets,
+the tool matches pak payload filenames in verified `FileRef` fields to descriptor
+paths present in the older catalog, requiring the same resource type and a unique path. Reference databases
+are matched by filename; their struct layouts are not used to decode the newer client.
 
 ```sh
-EditorCLI pack unpack <Bin/pack.bin> <Packs> --localization <Bin/pack.eng_eu.loc> -o Unpack17
+EditorCLI pack unpack <Bin> <Packs> --localization <Bin/pack.eng_eu.loc> \
+  --paths-from <14.0.01.77/data/Bin> -o Unpack17
 ```
 
-Generated 17.0.01.49 resource classes are in
-[`ClientResources/Structs/V17_0_01_49`](ClientResources/Structs/V17_0_01_49),
-with one resource per file and separate `Enums` and `Layouts` directories.
-
-The [layout manifest](ClientResources/Structs/V17_0_01_49/manifest.json) lists the
-verified inputs and remaining exclusions. `EventObserverResource`, `GuildReward`,
-and `CreatureIterationList` have unresolved layouts. Later client builds need
-their own verified models.
-
-Exports write `unpack-report.json` and return a nonzero status if any resource
-failed. `--dry-run` decodes without writing; `--type <name>` limits export to one
-resource type. Text references produce UTF-16 sidecars under `__localized`.
+Embedded names take precedence. Ambiguous IDs or payload matches, changed types, and output-path
+collisions are skipped. Unmatched roots receive stable
+`__generated/<database>/obj-<id>.xdb` paths, or an offset-based name when no object
+ID exists. Resource references use the same recovered or fallback paths.
+`unpack-report.json` includes pathname recovery counts per database. `--dry-run`
+also performs recovery and reports the counts without writing files.
 
 ## Planned features
 

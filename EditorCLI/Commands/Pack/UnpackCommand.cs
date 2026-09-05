@@ -51,6 +51,10 @@ internal sealed class UnpackCommand(ILogger<UnpackCommand> logger, ILoggerFactor
         [Description("17.x pack.<locale>.loc; its sibling .bin supplies localized resource references")]
         public string? Localization { get; init; }
 
+        [CommandOption("--paths-from <Bin>")]
+        [Description("Restore stripped resource paths from an older Bin directory, pack.bin, or pak containing Bin, such as 14.0.01.77")]
+        public string? PathsFrom { get; init; }
+
         [CommandOption("--type <NAME>")]
         [Description("Export only the named resource type")]
         public string? Type { get; init; }
@@ -98,9 +102,8 @@ internal sealed class UnpackCommand(ILogger<UnpackCommand> logger, ILoggerFactor
             {
                 throw new InvalidDataException($"Database {name} has a different version header than pack.bin");
             }
-
-            DatabaseExport.AssignMissingPaths(db, name);
         }
+
         if (!GameVersion.TryGetByVersion(mainMetadata.Version, out var version))
         {
             throw new NotSupportedException($"Unsupported version: 0x{Convert.ToHexString(mainMetadata.Version)}");
@@ -125,8 +128,29 @@ internal sealed class UnpackCommand(ILogger<UnpackCommand> logger, ILoggerFactor
         }
 
         logger.LogInformation("Loading structs for version {version}", version.ToString());
-
         var typeResolver = InitStructs(databases, version, settings.Strict);
+
+        var pathRecovery = new List<PathRecoveryReport>();
+        if (settings.PathsFrom is not null)
+        {
+            var references = DatabaseLoader.LoadPathMetadata(settings.PathsFrom, loggerFactory, databases.Keys);
+            if (references.Count == 0)
+            {
+                throw new InvalidDataException("The path reference contains no databases matching the export input");
+            }
+
+            var catalog = new ResourcePathCatalog(references);
+            foreach (var report in catalog.RestoreMissingPaths(databases, packsRegistry, typeResolver))
+            {
+                pathRecovery.Add(report);
+                logger.LogInformation("Paths for {Database}: {Restored} restored ({PayloadMatches} payload matches); {Unmatched} unmatched; {Ambiguous} ambiguous IDs; {Mismatched} type mismatches; {Conflicts} path conflicts; {Invalid} invalid paths",
+                    report.Database, report.Restored, report.PayloadMatches, report.Unmatched, report.AmbiguousIds, report.TypeMismatches, report.PathConflicts, report.InvalidPaths);
+            }
+        }
+        foreach (var (name, db) in databases)
+        {
+            DatabaseExport.AssignMissingPaths(db, name);
+        }
 
         if (settings.Type is not null && !typeResolver.TryResolveByName(settings.Type, out _))
         {
@@ -256,7 +280,7 @@ internal sealed class UnpackCommand(ILogger<UnpackCommand> logger, ILoggerFactor
                 File.WriteAllText(path, text, Encoding.Unicode);
             }
             File.WriteAllText(OutputPath(settings.OutputDirectory, "unpack-report.json"),
-                JsonSerializer.Serialize(new { exported, failed = failures.Count, failures }, new JsonSerializerOptions { WriteIndented = true }));
+                JsonSerializer.Serialize(new { exported, failed = failures.Count, failures, pathRecovery }, new JsonSerializerOptions { WriteIndented = true }));
         }
         logger.LogInformation("Decoded {Count} resources; {Failed} failed; {Texts} localized text files", exported, failures.Count, textFiles.Count);
         foreach (var failure in failures.Take(20))

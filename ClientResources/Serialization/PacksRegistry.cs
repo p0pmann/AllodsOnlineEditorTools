@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.IO.Compression;
 
 namespace AllodsOnlineEditorTools.ClientResources.Serialization;
@@ -30,5 +31,17 @@ public class PacksRegistry
     public string GetFilename(string packName, int fileIndex)
     {
         return _packsFiles[packName][fileIndex];
+    }
+
+    public bool TryGetFilename(string packName, int fileIndex, [NotNullWhen(true)] out string? filename)
+    {
+        filename = null;
+        if (!_packsFiles.TryGetValue(packName, out var files) || fileIndex < 0 || fileIndex >= files.Count)
+        {
+            return false;
+        }
+
+        filename = files[fileIndex];
+        return true;
     }
 }

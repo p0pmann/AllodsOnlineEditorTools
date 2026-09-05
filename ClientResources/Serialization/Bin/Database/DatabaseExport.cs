@@ -4,19 +4,14 @@ namespace AllodsOnlineEditorTools.ClientResources.Serialization.Bin.Database;
 
 public static class DatabaseExport
 {
-    /// <summary>17.x strips most source paths. Preserve identity without claiming to recover the original names.</summary>
+    /// <summary>Give remaining unnamed roots export identities after any reference paths have been restored.</summary>
     public static void AssignMissingPaths(BinDatabase database, string databaseName)
     {
         var metadata = database.Metadata;
-        if (metadata.PointerSize != 8)
-        {
-            return;
-        }
-
         var stem = Path.GetFileNameWithoutExtension(databaseName);
         foreach (var (offset, fix) in metadata.Fixes)
         {
-            if (fix.Type != PointerFix.FixType.Type || metadata.DbId2File.ContainsKey(offset))
+            if (fix.Type != PointerFix.FixType.Type || metadata.DbId2File.TryGetValue(offset, out var existing) && !string.IsNullOrWhiteSpace(existing))
             {
                 continue;
             }
@@ -28,9 +23,19 @@ public static class DatabaseExport
                 throw new InvalidDataException($"Generated path collision: {path}");
             }
 
-            metadata.DbId2File.Add(offset, path);
-            metadata.File2DbId.Add(path, offset);
+            AssignPath(metadata, offset, path);
         }
+    }
+
+    internal static void AssignPath(DatabaseMetadata metadata, long offset, string path)
+    {
+        if (metadata.DbId2File.TryGetValue(offset, out var previous) && metadata.File2DbId.TryGetValue(previous, out var owner) && owner == offset)
+        {
+            metadata.File2DbId.Remove(previous);
+        }
+
+        metadata.DbId2File[offset] = path;
+        metadata.File2DbId.Add(path, offset);
     }
 
     public static IReadOnlyList<long?> ReadLocalizedResources(BinDatabase database, StructTypeResolver resolver)
