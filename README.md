@@ -180,8 +180,8 @@ collisions are skipped. Unmatched roots receive stable
 resource ID exists. Map and localization database names prefix the filename,
 for example `_unnamed/TextureAtlas/Maps_Remort__blob_b0.xdb`, to avoid collisions.
 Resource references use the same recovered or fallback paths.
-`unpack-report.json` includes pathname recovery counts per database. `--dry-run`
-also performs recovery and reports the counts without writing files.
+Pathname recovery counts per database are logged to the console. `--dry-run`
+also performs recovery and logs the counts without writing files.
 
 Unnamed resources are written under `<output>/_unnamed`.
 

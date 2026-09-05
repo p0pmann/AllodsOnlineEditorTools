@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Text;
-using System.Text.Json;
 using AllodsOnlineEditorTools.ClientResources.Serialization;
 using AllodsOnlineEditorTools.ClientResources.Serialization.Bin;
 using AllodsOnlineEditorTools.ClientResources.Serialization.Bin.Database;
@@ -130,7 +129,6 @@ internal sealed class UnpackCommand(ILogger<UnpackCommand> logger, ILoggerFactor
         logger.LogInformation("Loading structs for version {version}", version.ToString());
         var typeResolver = InitStructs(databases, version, settings.Strict);
 
-        var pathRecovery = new List<PathRecoveryReport>();
         if (settings.PathsFrom is not null)
         {
             var references = DatabaseLoader.LoadPathMetadata(settings.PathsFrom, loggerFactory, databases.Keys);
@@ -142,7 +140,6 @@ internal sealed class UnpackCommand(ILogger<UnpackCommand> logger, ILoggerFactor
             var catalog = new ResourcePathCatalog(references);
             foreach (var report in catalog.RestoreMissingPaths(databases, packsRegistry, typeResolver))
             {
-                pathRecovery.Add(report);
                 logger.LogInformation("Paths for {Database}: {Restored} restored ({PayloadMatches} payload matches); {Unmatched} unmatched; {Ambiguous} ambiguous IDs; {Mismatched} type mismatches; {Conflicts} path conflicts; {Invalid} invalid paths",
                     report.Database, report.Restored, report.PayloadMatches, report.Unmatched, report.AmbiguousIds, report.TypeMismatches, report.PathConflicts, report.InvalidPaths);
             }
@@ -298,19 +295,6 @@ internal sealed class UnpackCommand(ILogger<UnpackCommand> logger, ILoggerFactor
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 File.WriteAllText(path, text, Encoding.Unicode);
             }
-            File.WriteAllText(OutputPath(settings.OutputDirectory, "unpack-report.json"),
-                JsonSerializer.Serialize(new
-                {
-                    exported,
-                    named = exported - unnamed,
-                    unnamed,
-                    localizedTextFiles = settings.Format == OutputFormat.Xdb ? semanticTextFiles : textFiles.Count,
-                    failed = failures.Count,
-                    failures,
-                    pathRecovery,
-                    outputDirectory = Path.GetFullPath(settings.OutputDirectory),
-                    unnamedOutputDirectory = Path.GetFullPath(Path.Combine(settings.OutputDirectory, "_unnamed")),
-                }, new JsonSerializerOptions { WriteIndented = true }));
         }
         logger.LogInformation("Decoded {Count} resources; {Failed} failed; {Texts} localized text files", exported, failures.Count,
             settings.Format == OutputFormat.Xdb ? semanticTextFiles : textFiles.Count);
