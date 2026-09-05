@@ -31,7 +31,7 @@ public class BinarySerializerOptions() : ConverterRegistry<IBinaryConverter>(Def
         }
 
         var sizeAttribute = type.GetCustomAttribute<StructSizeAttribute>();
-        return sizeAttribute?.Size ?? throw new InvalidOperationException(
+        return sizeAttribute?.Size ?? type.GetCustomAttribute<SerializedExtentAttribute>()?.Size ?? throw new InvalidOperationException(
             $"Cannot get size of type '{type.Name}': no converter matches and no {nameof(StructSizeAttribute)} is present");
     }
 }

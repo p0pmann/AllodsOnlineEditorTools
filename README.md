@@ -54,6 +54,7 @@ command that takes one.
 | Allods Online | `7.0.00.7x`    | ✅ Supported                              |
 | Allods Online | `14.0.01.71`   | ✅ Supported                              |
 | Cloud Pirates | `1.7.7`        | 🚧 Parsing only, no unpack                |
+| Allods Online | `17.0.01.49`   | ✅ Supported                              |
 | Allods Online | `17.0.01.55`   | 🚧 Parsing only, no unpack                |
 
 
@@ -110,9 +111,7 @@ The [`doc/`](doc) folder documents the custom `.bin` database format:
 
 ## Build & run
 
-Build the individual project files, **not the solution**: the solution also
-references `StructCodeGeneration`, which is not part of this repository (see
-the note below):
+Build the solution or the CLI project:
 
 ```sh
 dotnet build EditorCLI/EditorCLI.csproj
@@ -162,12 +161,29 @@ EditorCLI info versions
 
 Run any command with `--help` for its full set of options.
 
-> [!NOTE]
-> The `generate structs` command relies on an internal, non-public component that
-> inspects a running game process to recover struct layouts. That component is
-> **not part of this repository**, so `generate structs` is disabled in the
-> open-source build and will report that it is unavailable. The generated struct
-> model it produces is already checked in under `ClientResources/Structs`.
+### 17.x clients
+
+17.0.01.49 exports use recovered x64 layouts, localization tables, and pak entry
+indices. Most original source paths were stripped by the client build. Unnamed
+resources receive stable `__generated/<database>/obj-<id>.xdb` paths, and pointers
+use those same paths. These are export identities, not recovered source names.
+
+```sh
+EditorCLI pack unpack <Bin/pack.bin> <Packs> --localization <Bin/pack.eng_eu.loc> -o Unpack17
+```
+
+Generated 17.0.01.49 resource classes are in
+[`ClientResources/Structs/V17_0_01_49`](ClientResources/Structs/V17_0_01_49),
+with one resource per file and separate `Enums` and `Layouts` directories.
+
+The [layout manifest](ClientResources/Structs/V17_0_01_49/manifest.json) lists the
+verified inputs and remaining exclusions. `EventObserverResource`, `GuildReward`,
+and `CreatureIterationList` have unresolved layouts. Later client builds need
+their own verified models.
+
+Exports write `unpack-report.json` and return a nonzero status if any resource
+failed. `--dry-run` decodes without writing; `--type <name>` limits export to one
+resource type. Text references produce UTF-16 sidecars under `__localized`.
 
 ## Planned features
 

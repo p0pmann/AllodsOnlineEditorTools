@@ -8,5 +8,6 @@ public readonly record struct PointerFix(PointerFix.FixType Type, bool External,
         Direct,
         Type,
         Generic,
+        Unresolved,
     }
 }

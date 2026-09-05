@@ -1,0 +1,23 @@
+// Generated from client serializer evidence. Regenerate with EditorCLI generate structs.
+// ReSharper disable InconsistentNaming
+#nullable disable
+using System.Numerics;
+using AllodsOnlineEditorTools.ClientResources.DataTypes;
+using AllodsOnlineEditorTools.ClientResources.Serialization;
+using AllodsOnlineEditorTools.ClientResources.Serialization.Bin;
+using AllodsOnlineEditorTools.ClientResources.Serialization.Xdb;
+using JetBrains.Annotations;
+
+namespace AllodsOnlineEditorTools.ClientResources.Structs.V17_0_01_49;
+
+[SerializedExtent(69)]
+[XdbName("gameMechanics.elements.predicates.PredicateEquipped")]
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
+public partial class @PredicateEquipped
+{
+    [FieldOffset(44)] public bool @hideText;
+    [FieldOffset(52)][EnumRef(typeof(Enums.@e_c5c6a0))] public int @dressType;
+    [FieldOffset(56)] public ResourcePointer @itemClass;
+    [FieldOffset(64)][EnumRef(typeof(Enums.@e_fefe10))] public int @type;
+    [FieldOffset(68)] public bool @weaponRequired;
+}

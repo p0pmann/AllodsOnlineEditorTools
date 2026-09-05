@@ -91,6 +91,7 @@ internal sealed class BinDatabaseReader
         {
             Metadata = new DatabaseMetadata
             {
+                PointerSize = _wordSize.PointerSize,
                 TextFileRefNames = textFileRefNames,
                 ObjId2DbId = metadata.ObjId2DbId,
                 DbId2ObjId = metadata.DbId2ObjId,
@@ -206,8 +207,15 @@ internal sealed class BinDatabaseReader
         var (dbId2FileOffset, dbId2FileBucketCount) = ReadDirectoryEntry(reader);
         var (structsOffset, structsCount) = ReadDirectoryEntry(reader);
         var (resId2DbIdOffset, resId2DbIdCount) = ReadDirectoryEntry(reader);
-        var (dbId2ResIdOffset, dbId2ResIdCount) = ReadDirectoryEntry(reader);
-        if (_databaseFormat == DatabaseFormat.V2)
+        var shortDirectory = _databaseFormat == DatabaseFormat.V2 && _wordSize.PointerSize == 8 &&
+                             resId2DbIdCount == 0 && resId2DbIdOffset == metadataChunk.Length;
+        var (dbId2ResIdOffset, dbId2ResIdCount) = shortDirectory ? (0L, 0) : ReadDirectoryEntry(reader);
+        if (shortDirectory)
+        {
+            resId2DbIdOffset = 0;
+        }
+
+        if (_databaseFormat == DatabaseFormat.V2 && !shortDirectory)
         {
             _wordSize.ReadWord(reader); // Data pointer (redundant with the Data chunk)
         }
@@ -395,13 +403,22 @@ internal sealed class BinDatabaseReader
             var data = _wordSize.ReadWord(reader);
             var value = _wordSize.ReadWord(reader);
             var address = (data >> 3) * _wordSize.FixAddressScale;
-            var type = (PointerFix.FixType)(data & 3);
+            var tag = (int)(data & 7);
+            var type = _wordSize.PointerSize == 8 ? tag switch
+            {
+                0 or 1 => PointerFix.FixType.DbIdRef,
+                2 => PointerFix.FixType.Unresolved,
+                3 => PointerFix.FixType.Direct,
+                4 => PointerFix.FixType.Type,
+                5 => PointerFix.FixType.Generic,
+                _ => throw new InvalidDataException($"Unknown x64 relocation tag {tag}"),
+            } : (PointerFix.FixType)(data & 3);
             if (!Enum.IsDefined(type))
             {
                 throw new InvalidDataException($"Unknown pointer fix type {data & 3} at fix entry {i}");
             }
 
-            fixes.Add(address, new PointerFix(type, (data & 4) > 0, value));
+            fixes.Add(address, new PointerFix(type, _wordSize.PointerSize == 8 ? tag == 1 : (data & 4) > 0, value));
         }
 
         return fixes;

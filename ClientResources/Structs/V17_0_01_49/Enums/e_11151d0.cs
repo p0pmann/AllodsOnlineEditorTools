@@ -1,0 +1,20 @@
+// Generated from client serializer evidence. Regenerate with EditorCLI generate structs.
+// ReSharper disable InconsistentNaming
+#nullable disable
+using System.Numerics;
+using AllodsOnlineEditorTools.ClientResources.DataTypes;
+using AllodsOnlineEditorTools.ClientResources.Serialization;
+using AllodsOnlineEditorTools.ClientResources.Serialization.Bin;
+using AllodsOnlineEditorTools.ClientResources.Serialization.Xdb;
+using JetBrains.Annotations;
+
+namespace AllodsOnlineEditorTools.ClientResources.Structs.V17_0_01_49.Enums;
+
+public enum @e_11151d0
+{
+    @Lend = 0,
+    @Return = 1,
+    @Modify = 2,
+    @Repair = 3,
+    @BuyChests = 4,
+}

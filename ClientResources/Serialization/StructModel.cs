@@ -12,7 +12,7 @@ namespace AllodsOnlineEditorTools.ClientResources.Serialization;
 /// binary <see cref="FieldOffsetAttribute"/> offset (null on structs that are never read from binary, e.g.
 /// test fixtures).
 /// </summary>
-public sealed record StructField(FieldInfo Field, string XdbName, Type? EnumRef, int? Offset)
+public sealed record StructField(FieldInfo Field, string XdbName, Type? EnumRef, int? Offset, int ArrayStride = 0, bool EmbeddedVirtual = false)
 {
     public string Name => Field.Name;
     public Type FieldType => Field.FieldType;
@@ -39,7 +39,7 @@ public static class StructModelCache
         {
             var field = fields[i];
             structFields[i] = new StructField(field, XdbNameAttribute.Resolve(field), field.GetCustomAttribute<EnumRefAttribute>()?.EnumType,
-                field.GetCustomAttribute<FieldOffsetAttribute>()?.Offset);
+                field.GetCustomAttribute<FieldOffsetAttribute>()?.Offset, field.GetCustomAttribute<FieldOffsetAttribute>()?.ArrayStride ?? 0, field.GetCustomAttribute<FieldOffsetAttribute>()?.EmbeddedVirtual ?? false);
         }
 
         return new StructModel(type, XdbNameAttribute.Resolve(type), structFields);

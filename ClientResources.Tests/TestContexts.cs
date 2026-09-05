@@ -7,8 +7,9 @@ namespace ClientResources.Tests;
 
 internal static class TestContexts
 {
-    private static DatabaseMetadata EmptyMetadata() => new()
+    private static DatabaseMetadata EmptyMetadata(int pointerSize) => new()
     {
+        PointerSize = pointerSize,
         Version = [],
         ResourceSystemVersion = 0,
         TextFileRefNames = new Dictionary<int, string>(),
@@ -21,9 +22,9 @@ internal static class TestContexts
         Packs = null,
     };
 
-    public static BinaryStructSerializerContext TestContext(FileRefKind kind)
+    public static BinaryStructSerializerContext TestContext(FileRefKind kind, int pointerSize = 4)
     {
-        var metadata = EmptyMetadata();
+        var metadata = EmptyMetadata(pointerSize);
         return new BinaryStructSerializerContext
         {
             CurrentDatabaseMetadata = metadata,

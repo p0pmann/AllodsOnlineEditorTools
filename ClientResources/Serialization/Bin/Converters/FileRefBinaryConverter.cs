@@ -5,7 +5,7 @@ namespace AllodsOnlineEditorTools.ClientResources.Serialization.Bin.Converters;
 internal class FileRefBinaryConverter : BinaryConverter<FileRef>
 {
     public override int GetSize(Type type, BinaryStructSerializerContext context) =>
-        context.FileRefKind is FileRefKind.FileRef2 or FileRefKind.PakFileRef ? 20 : 12;
+        (context.FileRefKind is FileRefKind.FileRef2 or FileRefKind.PakFileRef ? 5 : 3) * context.PointerSize;
 
     protected override FileRef ReadValue(ref BinaryStructReader reader, long offset, Type typeToConvert, BinaryStructSerializerContext context)
     {
@@ -19,8 +19,8 @@ internal class FileRefBinaryConverter : BinaryConverter<FileRef>
         if (context.FileRefKind == FileRefKind.PakFileRef)
         {
             var metadata = context.CurrentDatabaseMetadata;
-            var packIndex = reader.ReadInt(offset + 12);
-            var fileIndex = reader.ReadInt(offset + 16);
+            var packIndex = checked((int)reader.ReadWord(offset + 3 * context.PointerSize));
+            var fileIndex = checked((int)reader.ReadWord(offset + 4 * context.PointerSize));
             file = context.ResolvePakFileRef(packIndex, fileIndex);
 
             if (file.Length > 0 && metadata.PakFileRefOffsets is not null && !metadata.PakFileRefOffsets.Contains((int)offset))

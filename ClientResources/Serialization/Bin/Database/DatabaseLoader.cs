@@ -29,6 +29,12 @@ public static class DatabaseLoader
                 }
             }
         }
+        else if (File.Exists(binPath) && Path.GetExtension(binPath).Equals(".bin", StringComparison.OrdinalIgnoreCase))
+        {
+            using var compressedBin = File.OpenRead(binPath);
+            var name = Path.GetFileName(binPath);
+            result[name] = LoadDatabase(name, compressedBin, logger);
+        }
         else if (Directory.Exists(binPath))
         {
             logger.LogInformation("Loading packs from folder {BinPath} ...", binPath);

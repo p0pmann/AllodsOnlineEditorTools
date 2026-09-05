@@ -1,0 +1,21 @@
+// Generated from client serializer evidence. Regenerate with EditorCLI generate structs.
+// ReSharper disable InconsistentNaming
+#nullable disable
+using System.Numerics;
+using AllodsOnlineEditorTools.ClientResources.DataTypes;
+using AllodsOnlineEditorTools.ClientResources.Serialization;
+using AllodsOnlineEditorTools.ClientResources.Serialization.Bin;
+using AllodsOnlineEditorTools.ClientResources.Serialization.Xdb;
+using JetBrains.Annotations;
+
+namespace AllodsOnlineEditorTools.ClientResources.Structs.V17_0_01_49;
+
+[SerializedExtent(64)]
+[XdbName("gameMechanics.elements.calcers.VariableValueCalcer")]
+[UsedImplicitly(ImplicitUseTargetFlags.WithMembers)]
+public partial class @VariableValueCalcer
+{
+    [FieldOffset(44)] public float @mul;
+    [FieldOffset(48)] public float @sum;
+    [FieldOffset(56)] public ResourcePointer @variable;
+}

@@ -1,0 +1,30 @@
+// Generated from client serializer evidence. Regenerate with EditorCLI generate structs.
+// ReSharper disable InconsistentNaming
+#nullable disable
+using System.Numerics;
+using AllodsOnlineEditorTools.ClientResources.DataTypes;
+using AllodsOnlineEditorTools.ClientResources.Serialization;
+using AllodsOnlineEditorTools.ClientResources.Serialization.Bin;
+using AllodsOnlineEditorTools.ClientResources.Serialization.Xdb;
+using JetBrains.Annotations;
+
+namespace AllodsOnlineEditorTools.ClientResources.Structs.V17_0_01_49.Enums;
+
+public enum @e_1720500
+{
+    @USDEV_USABLE_DEVICE = 0,
+    @USDEV_BEAM_CANNON = 1,
+    @USDEV_CANNON = 2,
+    @USDEV_ENGINE_HORIZONTAL = 3,
+    @USDEV_ENGINE_VERTICAL = 4,
+    @USDEV_NAVIGATOR = 5,
+    @USDEV_REACTOR = 6,
+    @USDEV_REMOTE_RUDDER = 7,
+    @USDEV_REMOTE_ENGINE_VERTICAL = 8,
+    @USDEV_REPAIR = 9,
+    @USDEV_RUDDER = 10,
+    @USDEV_SCANER = 11,
+    @USDEV_VISUAL = 12,
+    @USDEV_SHIELD = 13,
+    @USDEV_CANNON_AVATAR_CONTROLLED = 14,
+}

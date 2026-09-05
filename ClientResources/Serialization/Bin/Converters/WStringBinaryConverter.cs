@@ -5,7 +5,7 @@ namespace AllodsOnlineEditorTools.ClientResources.Serialization.Bin.Converters;
 
 internal class WStringBinaryConverter : BinaryConverter<WString>
 {
-    public override int GetSize(Type type, BinaryStructSerializerContext context) => 12;
+    public override int GetSize(Type type, BinaryStructSerializerContext context) => 3 * context.PointerSize;
 
     protected override WString ReadValue(ref BinaryStructReader reader, long offset, Type typeToConvert, BinaryStructSerializerContext context)
     {

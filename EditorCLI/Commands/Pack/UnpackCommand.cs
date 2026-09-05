@@ -1,4 +1,7 @@
+using System.Collections.Concurrent;
 using System.ComponentModel;
+using System.Text;
+using System.Text.Json;
 using AllodsOnlineEditorTools.ClientResources.Serialization;
 using AllodsOnlineEditorTools.ClientResources.Serialization.Bin;
 using AllodsOnlineEditorTools.ClientResources.Serialization.Bin.Database;
@@ -44,6 +47,14 @@ internal sealed class UnpackCommand(ILogger<UnpackCommand> logger, ILoggerFactor
         [Description("Fail if any struct referenced by the databases has no implementation")]
         public bool Strict { get; set; }
 
+        [CommandOption("--localization <PATH>")]
+        [Description("17.x pack.<locale>.loc; its sibling .bin supplies localized resource references")]
+        public string? Localization { get; init; }
+
+        [CommandOption("--type <NAME>")]
+        [Description("Export only the named resource type")]
+        public string? Type { get; init; }
+
         [CommandOption("--as <version>")]
         [Description(
             "Cast resources to another game version (see supported versions) before serializing, incompatible resources/fields are skipped with a warning")]
@@ -59,7 +70,37 @@ internal sealed class UnpackCommand(ILogger<UnpackCommand> logger, ILoggerFactor
             throw new InvalidDataException($"No pack.bin database found in '{settings.BinPath}'; cannot unpack without the main database");
         }
 
+        BinDatabase? localizedDatabase = null;
+        LocalizationTable? localization = null;
+        if (settings.Localization is not null)
+        {
+            localization = LocalizationTable.Load(settings.Localization);
+            var sibling = Path.ChangeExtension(settings.Localization, ".bin");
+            if (!File.Exists(sibling))
+            {
+                throw new FileNotFoundException("Localization resource database is missing", sibling);
+            }
+
+            var loaded = DatabaseLoader.LoadDatabases(sibling, loggerFactory);
+            localizedDatabase = loaded.Single().Value;
+            // Load only the selected locale, even when the input folder contains others.
+            foreach (var name in databases.Keys.Where(n => n.StartsWith("pack.") && n != "pack.bin").ToArray())
+            {
+                databases.Remove(name);
+            }
+
+            databases[Path.GetFileName(sibling)] = localizedDatabase.Value;
+        }
         var mainMetadata = mainDatabase.Metadata;
+        foreach (var (name, db) in databases)
+        {
+            if (!db.Metadata.Version.SequenceEqual(mainMetadata.Version))
+            {
+                throw new InvalidDataException($"Database {name} has a different version header than pack.bin");
+            }
+
+            DatabaseExport.AssignMissingPaths(db, name);
+        }
         if (!GameVersion.TryGetByVersion(mainMetadata.Version, out var version))
         {
             throw new NotSupportedException($"Unsupported version: 0x{Convert.ToHexString(mainMetadata.Version)}");
@@ -87,6 +128,15 @@ internal sealed class UnpackCommand(ILogger<UnpackCommand> logger, ILoggerFactor
 
         var typeResolver = InitStructs(databases, version, settings.Strict);
 
+        if (settings.Type is not null && !typeResolver.TryResolveByName(settings.Type, out _))
+        {
+            throw new ArgumentException($"Unknown resource type '{settings.Type}' for {version}");
+        }
+
+        var localizedOffsets = localizedDatabase is { } localized ? DatabaseExport.ReadLocalizedResources(localized, typeResolver) : null;
+        var textFiles = new ConcurrentDictionary<string, string>();
+        var failures = new ConcurrentDictionary<string, string>();
+        var exported = 0;
         var caster = settings.CastToVersion is null ? null : CreateCaster(settings.CastToVersion, version, databases, settings.Strict);
 
         if (!settings.Dry)
@@ -138,6 +188,12 @@ internal sealed class UnpackCommand(ILogger<UnpackCommand> logger, ILoggerFactor
                 FileRefKind = version.FileRefKind,
                 Packs = packsRegistry,
                 LoggerFactory = loggerFactory,
+                MainDatabase = mainDatabase,
+                LocalizedDatabase = localizedDatabase,
+                LocalizedResourceOffsets = localizedOffsets,
+                Localization = localization,
+                LocalizationDirectory = "__localized/" + Path.GetFileNameWithoutExtension(settings.Localization ?? "pack"),
+                TextFileRead = (name, text) => textFiles.TryAdd(name, text),
             };
 
             var resourceContext = new ResourceSerializationContext { EnumRefOverrides = caster?.EnumRefOverrides, };
@@ -145,42 +201,82 @@ internal sealed class UnpackCommand(ILogger<UnpackCommand> logger, ILoggerFactor
 
             Parallel.ForEach(databaseMetadata.DbId2File, fileEntry =>
             {
-                if (caster is not null)
+                if (settings.Type is not null && databaseMetadata.GetStructType(fileEntry.Key) != settings.Type)
                 {
-                    var structName = databaseMetadata.GetStructType(fileEntry.Key);
-                    if (structName is null || !caster.CanCast(structName))
-                    {
-                        ReportProgress();
-                        return;
-                    }
+                    ReportProgress();
+                    return;
                 }
-
-                using (logger.BeginScope("Database:{Database} File:{File}", entry.Key, fileEntry.Value))
+                try
                 {
-                    var result = BinaryStructSerializer.Deserialize(databaseData, fileEntry.Key, serializerContext, binaryOptions);
                     if (caster is not null)
                     {
-                        result = caster.Cast(result, resourceContext);
+                        var structName = databaseMetadata.GetStructType(fileEntry.Key);
+                        if (structName is null || !caster.CanCast(structName))
+                        {
+                            ReportProgress();
+                            return;
+                        }
                     }
 
-                    databaseMetadata.DbId2ResId.TryGetValue(fileEntry.Key, out int resourceId);
-                    var content = serializer.SerializeResource(result, resourceId);
-
-                    if (!settings.Dry)
+                    using (logger.BeginScope("Database:{Database} File:{File}", entry.Key, fileEntry.Value))
                     {
-                        var directoryName = Path.GetDirectoryName(fileEntry.Value) ??
-                                            throw new InvalidOperationException($"Directory name is null for path {fileEntry.Value}");
-                        Directory.CreateDirectory(Path.Combine(settings.OutputDirectory, directoryName));
-                        var path = Path.ChangeExtension(Path.Combine(settings.OutputDirectory, fileEntry.Value), extension);
-                        File.WriteAllText(path, content);
-                    }
-                }
+                        var result = BinaryStructSerializer.Deserialize(databaseData, fileEntry.Key, serializerContext, binaryOptions);
+                        if (caster is not null)
+                        {
+                            result = caster.Cast(result, resourceContext);
+                        }
 
+                        databaseMetadata.DbId2ResId.TryGetValue(fileEntry.Key, out int resourceId);
+                        var content = serializer.SerializeResource(result, resourceId);
+
+                        if (!settings.Dry)
+                        {
+                            var path = OutputPath(settings.OutputDirectory, Path.ChangeExtension(fileEntry.Value, extension));
+                            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                            File.WriteAllText(path, content);
+                        }
+                    }
+
+                    Interlocked.Increment(ref exported);
+                }
+                catch (Exception error) when (error is InvalidDataException or InvalidOperationException or ArgumentException or KeyNotFoundException or OverflowException or NotSupportedException)
+                {
+                    failures[$"{entry.Key}:{fileEntry.Value}"] = error.Message;
+                }
                 ReportProgress();
             });
         }
 
-        return 0;
+        if (!settings.Dry)
+        {
+            foreach (var (name, text) in textFiles)
+            {
+                var path = OutputPath(settings.OutputDirectory, name);
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+                File.WriteAllText(path, text, Encoding.Unicode);
+            }
+            File.WriteAllText(OutputPath(settings.OutputDirectory, "unpack-report.json"),
+                JsonSerializer.Serialize(new { exported, failed = failures.Count, failures }, new JsonSerializerOptions { WriteIndented = true }));
+        }
+        logger.LogInformation("Decoded {Count} resources; {Failed} failed; {Texts} localized text files", exported, failures.Count, textFiles.Count);
+        foreach (var failure in failures.Take(20))
+        {
+            logger.LogWarning("{Resource}: {Reason}", failure.Key, failure.Value);
+        }
+
+        return failures.IsEmpty ? 0 : 1;
+    }
+
+    private static string OutputPath(string root, string relative)
+    {
+        var fullRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        var path = Path.GetFullPath(Path.Combine(fullRoot, relative.Replace('/', Path.DirectorySeparatorChar)));
+        if (!path.StartsWith(fullRoot, OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+        {
+            throw new InvalidDataException($"Resource path escapes the output directory: {relative}");
+        }
+
+        return path;
     }
 
     private static IResourceWriter CreateSerializer(OutputFormat format, ResourceSerializationContext context, ILoggerFactory loggerFactory) => format switch

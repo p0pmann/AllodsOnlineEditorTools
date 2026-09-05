@@ -9,6 +9,7 @@
 Requires the .NET SDK 10.0 or later. **Build the individual project files, not
 the solution** : the `.slnx` references `StructCodeGeneration`, which is not part
 of this repository, so a clean-checkout solution build fails.
+All project code, including the private generator, is C#.
 
 ```sh
 dotnet build EditorCLI/EditorCLI.csproj
@@ -34,7 +35,7 @@ proposing a change.
 - **`StructCodeGeneration` is not in this repository.** The open-source build
   (`IsOpenSourceBuild=true`, the csproj default unless a local, gitignored
   `Directory.Build.props` overrides it) omits it and `#if`-disables the
-  `structs generate` command. When editing `GenerateStructCodeCommand.cs`, both
+  `generate structs` command. When editing `GenerateStructCodeCommand.cs`, both
   the `IS_OPEN_SOURCE_BUILD` and non-OSS branches must compile.
 - **Never commit game assets** or copyrighted data. This repo ships none.
 

@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Text;
+using AllodsOnlineEditorTools.ClientResources.Serialization.Bin.Converters;
 using AllodsOnlineEditorTools.ClientResources.Serialization.Bin.Database;
 
 namespace AllodsOnlineEditorTools.ClientResources.Serialization.Bin;
@@ -8,6 +9,7 @@ namespace AllodsOnlineEditorTools.ClientResources.Serialization.Bin;
 public ref struct BinaryStructReader(ReadOnlySpan<byte> buffer, BinaryStructSerializerContext context, BinarySerializerOptions options)
 {
     private readonly ReadOnlySpan<byte> _buffer = buffer;
+    private long _ownerOffset = -1;
 
     public Type ReadType(long offset, bool nullable)
     {
@@ -21,7 +23,7 @@ public ref struct BinaryStructReader(ReadOnlySpan<byte> buffer, BinaryStructSeri
             throw new InvalidDataException($"Expected a type pointer fix at offset {offset}, got {fix.Type}");
         }
 
-        var structName = context.CurrentDatabaseMetadata.Structs[(int)fix.Value];
+        var structName = context.CurrentDatabaseMetadata.Structs[checked((int)fix.Value)];
         if (!context.TypeResolver.TryResolveByName(structName, out var type))
         {
             throw new InvalidOperationException($"Struct implementation not found for '{structName}'");
@@ -29,7 +31,7 @@ public ref struct BinaryStructReader(ReadOnlySpan<byte> buffer, BinaryStructSeri
 
         //BUG: Debug.Assert(ReadInt(offset + 16) == 1 || nullable || type.Name == "Territory");
         //BUG: TerritoriesRegistry + NameRules + Textures in V14 (all localized ?)
-        Debug.Assert(ReadInt(offset + 4) == 1 || ReadInt(offset + 4) == 2 && type.Name == "Territory");
+        Debug.Assert(context.PointerSize == 8 || ReadInt(offset + 4) == 1 || ReadInt(offset + 4) == 2 && type.Name == "Territory");
         return type;
     }
 
@@ -40,6 +42,11 @@ public ref struct BinaryStructReader(ReadOnlySpan<byte> buffer, BinaryStructSeri
             throw new InvalidOperationException($"Cannot read abstract type '{type.Name}'");
         }
 
+        if (_ownerOffset < 0)
+        {
+            _ownerOffset = offset;
+        }
+
         var result = Activator.CreateInstance(type) ?? throw new InvalidOperationException($"Failed to create instance of '{type.Name}'");
         foreach (var field in StructModelCache.Get(type).Fields)
         {
@@ -48,7 +55,11 @@ public ref struct BinaryStructReader(ReadOnlySpan<byte> buffer, BinaryStructSeri
                 throw new InvalidOperationException($"Field '{type.Name}.{field.Name}' is missing {nameof(FieldOffsetAttribute)}");
             }
 
-            var value = ReadField(offset + fieldOffset, field.FieldType);
+            var value = field.EmbeddedVirtual && context.PointerSize == 8
+                ? ReadEmbeddedVirtual(offset + fieldOffset, field.FieldType)
+                : field.ArrayStride > 0
+                ? ArrayBinaryConverter.ReadArray(ref this, offset + fieldOffset, field.FieldType, context, field.ArrayStride)
+                : ReadField(offset + fieldOffset, field.FieldType);
             if (field.EnumRef is not null)
             {
                 FieldValidator.ValidateEnumRef(field.Field, offset + fieldOffset, field.EnumRef, value);
@@ -58,6 +69,101 @@ public ref struct BinaryStructReader(ReadOnlySpan<byte> buffer, BinaryStructSeri
         }
 
         return result;
+    }
+
+    private object ReadEmbeddedVirtual(long offset, Type type)
+    {
+        var metadata = context.CurrentDatabaseMetadata;
+        if (metadata.Fixes.ContainsKey(offset))
+        {
+            return ReadObject(offset, ReadType(offset, true));
+        }
+
+        if (!NeedsRelocatedCopy(offset, type))
+        {
+            return ReadObject(offset, type);
+        }
+
+        var end = metadata.NextRootOffset(_ownerOffset, _buffer.Length);
+        long? match = null;
+        for (var candidate = offset + 8; candidate < end; candidate += 8)
+        {
+            if (!metadata.Fixes.TryGetValue(candidate, out var fix) || fix.Type != PointerFix.FixType.Generic ||
+                metadata.GetStructType(candidate) != type.Name || !ScalarFieldsMatch(offset, candidate, type))
+            {
+                continue;
+            }
+
+            if (match is not null)
+            {
+                throw new InvalidDataException($"Multiple relocated copies of {type.Name} match embedded object {offset}");
+            }
+
+            match = candidate;
+        }
+        // An empty embedded value may have no orphan. Its normal field readers still reject any
+        // nonempty unrelocated payload rather than replacing it with empty data.
+        return ReadObject(match ?? offset, type);
+    }
+
+    private bool NeedsRelocatedCopy(long offset, Type type)
+    {
+        foreach (var field in StructModelCache.Get(type).Fields)
+        {
+            var at = offset + (field.Offset ?? throw new InvalidDataException($"No offset for {field.Name}"));
+            if (field.FieldType == typeof(string) || field.FieldType == typeof(AllodsOnlineEditorTools.ClientResources.DataTypes.WString) || field.FieldType.IsArray)
+            {
+                if (!TryGetPointerFix(at, out _) && ReadWord(at + 8) != 0)
+                {
+                    return true;
+                }
+            }
+            else if (field.FieldType == typeof(AllodsOnlineEditorTools.ClientResources.DataTypes.ResourcePointer) ||
+                     field.FieldType == typeof(AllodsOnlineEditorTools.ClientResources.DataTypes.NullablePointer))
+            {
+                if (!TryGetPointerFix(at, out _) && ReadWord(at) != 0)
+                {
+                    return true;
+                }
+            }
+            else if (field.FieldType.IsClass && NeedsRelocatedCopy(at, field.FieldType))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private bool ScalarFieldsMatch(long embedded, long candidate, Type type)
+    {
+        foreach (var field in StructModelCache.Get(type).Fields)
+        {
+            if (field.Offset is not { } offset)
+            {
+                throw new InvalidDataException($"No offset for {field.Name}");
+            }
+
+            var fieldType = field.FieldType;
+            if (fieldType.IsPrimitive)
+            {
+                var size = GetSize(fieldType);
+                ValidateRange(candidate + offset, size);
+                if (!_buffer.Slice(checked((int)(embedded + offset)), size).SequenceEqual(_buffer.Slice(checked((int)(candidate + offset)), size)))
+                {
+                    return false;
+                }
+            }
+            else if (fieldType == typeof(string) || fieldType == typeof(AllodsOnlineEditorTools.ClientResources.DataTypes.WString) || fieldType.IsArray)
+            {
+                // The embedded native container holds absolute pointers; the saved copy holds lengths.
+                continue;
+            }
+            else if (fieldType.IsClass && !ScalarFieldsMatch(embedded + offset, candidate + offset, fieldType))
+            {
+                return false;
+            }
+        }
+        return true;
     }
 
     public object? ReadField(long offset, Type type)
@@ -71,15 +177,28 @@ public ref struct BinaryStructReader(ReadOnlySpan<byte> buffer, BinaryStructSeri
         return type.IsClass ? ReadObject(offset, type) : throw new InvalidOperationException($"No binary converter registered for type '{type.Name}'");
     }
 
-    public int ReadInt(long offset) => BinaryPrimitives.ReadInt32LittleEndian(_buffer.Slice((int)offset, 4));
+    public void ValidateRange(long offset, long length)
+    {
+        if (offset < 0 || length < 0 || offset > _buffer.Length || length > _buffer.Length - offset)
+        {
+            throw new InvalidDataException($"Range {offset}+{length} exceeds the database data chunk");
+        }
+    }
 
-    public long ReadLong(long offset) => BinaryPrimitives.ReadInt64LittleEndian(_buffer.Slice((int)offset, 8));
+    public byte ReadByte(long offset) => _buffer[checked((int)offset)];
+    public short ReadShort(long offset) => BinaryPrimitives.ReadInt16LittleEndian(_buffer.Slice(checked((int)offset), 2));
 
-    public float ReadFloat(long offset) => BinaryPrimitives.ReadSingleLittleEndian(_buffer.Slice((int)offset, 4));
+    public int ReadInt(long offset) => BinaryPrimitives.ReadInt32LittleEndian(_buffer.Slice(checked((int)offset), 4));
 
-    public double ReadDouble(long offset) => BinaryPrimitives.ReadDoubleLittleEndian(_buffer.Slice((int)offset, 8));
+    public long ReadLong(long offset) => BinaryPrimitives.ReadInt64LittleEndian(_buffer.Slice(checked((int)offset), 8));
 
-    public bool ReadBool(long offset) => _buffer[(int)offset] != 0;
+    public long ReadWord(long offset) => context.PointerSize == 8 ? ReadLong(offset) : ReadInt(offset);
+
+    public float ReadFloat(long offset) => BinaryPrimitives.ReadSingleLittleEndian(_buffer.Slice(checked((int)offset), 4));
+
+    public double ReadDouble(long offset) => BinaryPrimitives.ReadDoubleLittleEndian(_buffer.Slice(checked((int)offset), 8));
+
+    public bool ReadBool(long offset) => _buffer[checked((int)offset)] != 0;
 
     // Default string payloads (plain strings, file refs, text-file refs) are single-byte/ASCII;
     // only fields the schema marks as wide (WString) are UTF-16LE. The length prefix is a byte count either way.
@@ -102,6 +221,11 @@ public ref struct BinaryStructReader(ReadOnlySpan<byte> buffer, BinaryStructSeri
     {
         if (!context.CurrentDatabaseMetadata.Fixes.TryGetValue(offset, out var fix))
         {
+            if (context.PointerSize == 8 && ReadWord(offset + context.PointerSize) != 0)
+            {
+                throw new InvalidDataException($"Nonempty string at {offset} has no relocation");
+            }
+
             return string.Empty;
         }
 
@@ -110,13 +234,13 @@ public ref struct BinaryStructReader(ReadOnlySpan<byte> buffer, BinaryStructSeri
             throw new InvalidDataException($"Expected a direct pointer fix for string at offset {offset}, got {fix.Type}");
         }
 
-        var length = ReadInt(offset + 4);
+        var length = checked((int)ReadWord(offset + context.PointerSize));
         if (length < 0)
         {
             throw new InvalidDataException($"Negative string length ({length}) at offset {offset}");
         }
 
-        return length > 0 ? encoding.GetString(_buffer.Slice((int)fix.Value, length)).TrimEnd('\0') : string.Empty;
+        return length > 0 ? encoding.GetString(_buffer.Slice(checked((int)fix.Value), length)).TrimEnd('\0') : string.Empty;
     }
 
     public bool TryGetPointerFix(long offset, out PointerFix pointerFix) =>
