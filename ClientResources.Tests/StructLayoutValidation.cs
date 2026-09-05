@@ -31,7 +31,7 @@ public class StructLayoutValidation
     [TestCaseSource(nameof(StructCases))]
     public void ValidateStruct(GameVersion version, Type type)
     {
-        var context = TestContexts.TestContext(version.FileRefKind);
+        var context = TestContexts.TestContext(version.FileRefKind, version.PointerSize);
         ValidateClass(context, type, 0, SizeOf(context, type));
     }
 

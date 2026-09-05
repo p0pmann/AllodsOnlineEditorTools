@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -29,6 +29,10 @@
     <ProjectReference Include="..\ClientResources\ClientResources.csproj"/>
     <ProjectReference Include="..\StructCodeGeneration\StructCodeGeneration.csproj"
                       Condition="'$(IsOpenSourceBuild)' != 'true'"/>
+    <Content Include="..\StructCodeGeneration\profiles\*.json"
+             Condition="'$(IsOpenSourceBuild)' != 'true'"
+             Link="StructCodeGeneration\profiles\%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never"/>
   </ItemGroup>
 
 </Project>

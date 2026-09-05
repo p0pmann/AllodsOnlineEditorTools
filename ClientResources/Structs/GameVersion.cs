@@ -17,6 +17,7 @@ public class GameVersion
     /// detects the format from the payload instead. Defaults to <see cref="DatabaseFormat.V1"/>.
     /// </summary>
     public DatabaseFormat DatabaseFormat { get; init; } = DatabaseFormat.V1;
+    public int PointerSize { get; init; } = 4;
     public FileRefKind FileRefKind { get; init; } = FileRefKind.None;
     private string Hash { get; init; } = string.Empty;
     public bool NeedPacks => FileRefKind == FileRefKind.PakFileRef;
@@ -72,7 +73,12 @@ public class GameVersion
         },
         new()
         {
-            Name = "Allods Online 17.0.01.55", Hash = "C4022E5973040000441E2B41", FileRefKind = FileRefKind.PakFileRef, DatabaseFormat = DatabaseFormat.V2,
+            Name = "Allods Online 17.0.01.49", Hash = "C4022E59730400008501FBCA", Namespace = nameof(V17_0_01_49),
+            FileRefKind = FileRefKind.PakFileRef, DatabaseFormat = DatabaseFormat.V2, PointerSize = 8,
+        },
+        new()
+        {
+            Name = "Allods Online 17.0.01.55", Hash = "C4022E5973040000441E2B41", FileRefKind = FileRefKind.PakFileRef, DatabaseFormat = DatabaseFormat.V2, PointerSize = 8,
         },
     ];
     public static readonly IReadOnlyDictionary<string, GameVersion> Versions = All.ToDictionary(version => version.Hash, StringComparer.OrdinalIgnoreCase);

@@ -53,9 +53,9 @@ command that takes one.
 | Allods Online | `4.0.02.4x`    | ✅ Supported                              |
 | Allods Online | `7.0.00.7x`    | ✅ Supported                              |
 | Allods Online | `14.0.01.71`   | ✅ Supported                              |
-| Cloud Pirates | `1.7.7`        | 🚧 Parsing only, no unpack                |
+| Allods Online | `17.0.01.49`   | ✅ Supported                              |
 | Allods Online | `17.0.01.55`   | 🚧 Parsing only, no unpack                |
-
+| Cloud Pirates | `1.7.7`        | 🚧 Parsing only, no unpack                |
 
 ### Cross-version casting (`--as`)
 
@@ -110,9 +110,7 @@ The [`doc/`](doc) folder documents the custom `.bin` database format:
 
 ## Build & run
 
-Build the individual project files, **not the solution**: the solution also
-references `StructCodeGeneration`, which is not part of this repository (see
-the note below):
+Build the solution or the CLI project:
 
 ```sh
 dotnet build EditorCLI/EditorCLI.csproj
@@ -162,12 +160,35 @@ EditorCLI info versions
 
 Run any command with `--help` for its full set of options.
 
-> [!NOTE]
-> The `generate structs` command relies on an internal, non-public component that
-> inspects a running game process to recover struct layouts. That component is
-> **not part of this repository**, so `generate structs` is disabled in the
-> open-source build and will report that it is unavailable. The generated struct
-> model it produces is already checked in under `ClientResources/Structs`.
+### 15.x+ clients
+
+Clients from version 15 onward strip most resource pathnames. Pass
+`--paths-from` with a 14.0.01.77 Bin directory, `pack.bin`, or pak containing `Bin`
+to restore names from matching resource IDs and types. For remaining assets,
+the tool matches pak payload filenames in verified `FileRef` fields to descriptor
+paths present in the older catalog, requiring the same resource type and a unique path. Reference databases
+are matched by filename; their struct layouts are not used to decode the newer client.
+
+```sh
+EditorCLI pack unpack <Bin> <Packs> --localization <Bin/pack.eng_eu.loc> \
+  --paths-from <14.0.01.77/data/Bin> -o Unpack17
+```
+
+Embedded names take precedence. Ambiguous IDs or payload matches, changed types, and output-path
+collisions are skipped. Unmatched roots receive stable
+`_unnamed/<type>/id_<resource-id>.xdb` paths, or `blob_<hex-offset>.xdb` when no
+resource ID exists. Map and localization database names prefix the filename,
+for example `_unnamed/TextureAtlas/Maps_Remort__blob_b0.xdb`, to avoid collisions.
+Resource references use the same recovered or fallback paths.
+Pathname recovery counts per database are logged to the console. `--dry-run`
+also performs recovery and logs the counts without writing files.
+
+Unnamed resources are written under `<output>/_unnamed`.
+
+XDB exports keep empty reference fields and write localized text beside its resource,
+for example `PlatinumCoin.Name.txt` and `PlatinumCoin.Description.txt`, with relative
+`href` values. Repeated field names receive numeric suffixes. Text files use UTF-16
+with a byte-order mark. JDB exports keep the indexed `__localized` text paths.
 
 ## Planned features
 

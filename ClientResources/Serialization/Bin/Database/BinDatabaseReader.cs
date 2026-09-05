@@ -24,12 +24,18 @@ internal sealed class BinDatabaseReader
     }
 
     public static BinDatabase Read(Stream decompressed, string name, ILogger logger)
+        => Read(decompressed, name, logger, false);
+
+    public static DatabaseMetadata ReadPathMetadata(Stream decompressed, string name, ILogger logger)
+        => Read(decompressed, name, logger, true).Metadata;
+
+    private static BinDatabase Read(Stream decompressed, string name, ILogger logger, bool pathsOnly)
     {
         decompressed.Seek(0, SeekOrigin.Begin);
         using var reader = new BinaryReader(decompressed, Encoding.UTF8, leaveOpen: true);
 
         var (format, wordSize) = DetectDatabaseFormat(reader);
-        return new BinDatabaseReader(format, wordSize).ReadDatabase(reader, name, logger);
+        return new BinDatabaseReader(format, wordSize).ReadDatabase(reader, name, logger, pathsOnly);
     }
 
     private static (DatabaseFormat, WordSize) DetectDatabaseFormat(BinaryReader reader)
@@ -61,20 +67,40 @@ internal sealed class BinDatabaseReader
         return (format, wordSize);
     }
 
-    private BinDatabase ReadDatabase(BinaryReader reader, string name, ILogger logger)
+    private BinDatabase ReadDatabase(BinaryReader reader, string name, ILogger logger, bool pathsOnly)
     {
         var version = _databaseFormat == DatabaseFormat.V1 ? ReadChunk(reader, DatabaseChunkId.Header) : reader.ReadBytes(HeaderSize);
-        var textFileRefNames = _databaseFormat == DatabaseFormat.V1 ? ReadTextFileRefNames(ReadChunk(reader, DatabaseChunkId.TxtFiles)) : null;
+        IDictionary<int, string>? textFileRefNames = null;
+        if (_databaseFormat == DatabaseFormat.V1)
+        {
+            if (pathsOnly)
+            {
+                SkipChunk(reader, DatabaseChunkId.TxtFiles);
+            }
+            else
+            {
+                textFileRefNames = ReadTextFileRefNames(ReadChunk(reader, DatabaseChunkId.TxtFiles));
+            }
+        }
         var metadata = ReadMetadata(ReadChunk(reader, DatabaseChunkId.Metadata), name, logger);
-        var data = ReadChunk(reader, DatabaseChunkId.Data);
-        var fixes = ReadFixes(ReadChunk(reader, DatabaseChunkId.Fixes, _wordSize.FixEntrySize));
+        byte[] data = [];
+        if (pathsOnly)
+        {
+            SkipChunk(reader, DatabaseChunkId.Data);
+        }
+        else
+        {
+            data = ReadChunk(reader, DatabaseChunkId.Data);
+        }
+
+        var fixes = ReadFixes(ReadChunk(reader, DatabaseChunkId.Fixes, _wordSize.FixEntrySize), pathsOnly);
 
         HashSet<int>? pakFileRefOffsets = null;
         List<string>? packs = null;
 
         // The optional pak-file-ref / packs section is absent from legacy databases that reference no paks;
         // V2 always emits it. Either way it runs to end-of-stream, so the same EOF guard covers both.
-        if (reader.BaseStream.Position != reader.BaseStream.Length)
+        if (!pathsOnly && reader.BaseStream.Position != reader.BaseStream.Length)
         {
             pakFileRefOffsets = ReadPakFileRefOffsets(ReadChunk(reader, DatabaseChunkId.PakFileRefs, _wordSize.PointerSize), data.Length);
 
@@ -91,6 +117,7 @@ internal sealed class BinDatabaseReader
         {
             Metadata = new DatabaseMetadata
             {
+                PointerSize = _wordSize.PointerSize,
                 TextFileRefNames = textFileRefNames,
                 ObjId2DbId = metadata.ObjId2DbId,
                 DbId2ObjId = metadata.DbId2ObjId,
@@ -107,6 +134,22 @@ internal sealed class BinDatabaseReader
             },
             Data = data,
         };
+    }
+
+    private void SkipChunk(BinaryReader reader, DatabaseChunkId expectedId)
+    {
+        if ((DatabaseChunkId)reader.ReadInt32() != expectedId)
+        {
+            throw new InvalidDataException($"Expected chunk {expectedId}");
+        }
+
+        var size = _wordSize.ReadWord(reader);
+        if (size < 0 || size > reader.BaseStream.Length - reader.BaseStream.Position)
+        {
+            throw new InvalidDataException($"Invalid {expectedId} chunk size");
+        }
+
+        reader.BaseStream.Seek(size, SeekOrigin.Current);
     }
 
     private byte[] ReadChunk(BinaryReader reader, DatabaseChunkId expectedId, int entrySize = 1)
@@ -206,8 +249,15 @@ internal sealed class BinDatabaseReader
         var (dbId2FileOffset, dbId2FileBucketCount) = ReadDirectoryEntry(reader);
         var (structsOffset, structsCount) = ReadDirectoryEntry(reader);
         var (resId2DbIdOffset, resId2DbIdCount) = ReadDirectoryEntry(reader);
-        var (dbId2ResIdOffset, dbId2ResIdCount) = ReadDirectoryEntry(reader);
-        if (_databaseFormat == DatabaseFormat.V2)
+        var shortDirectory = _databaseFormat == DatabaseFormat.V2 && _wordSize.PointerSize == 8 &&
+                             resId2DbIdCount == 0 && resId2DbIdOffset == metadataChunk.Length;
+        var (dbId2ResIdOffset, dbId2ResIdCount) = shortDirectory ? (0L, 0) : ReadDirectoryEntry(reader);
+        if (shortDirectory)
+        {
+            resId2DbIdOffset = 0;
+        }
+
+        if (_databaseFormat == DatabaseFormat.V2 && !shortDirectory)
         {
             _wordSize.ReadWord(reader); // Data pointer (redundant with the Data chunk)
         }
@@ -380,7 +430,7 @@ internal sealed class BinDatabaseReader
     private static string FileName(IDictionary<long, string> dbId2File, long dbId) =>
         dbId2File.TryGetValue(dbId, out var file) ? file : $"dbId {dbId}";
 
-    private IDictionary<long, PointerFix> ReadFixes(byte[] fixesChunk)
+    private IDictionary<long, PointerFix> ReadFixes(byte[] fixesChunk, bool rootsOnly = false)
     {
         // Entries are (pointer data, pointer value); the address is packed in the high bits of data and
         // scales by the pointer size (x4 on x86, x8 on x64).
@@ -395,13 +445,25 @@ internal sealed class BinDatabaseReader
             var data = _wordSize.ReadWord(reader);
             var value = _wordSize.ReadWord(reader);
             var address = (data >> 3) * _wordSize.FixAddressScale;
-            var type = (PointerFix.FixType)(data & 3);
+            var tag = (int)(data & 7);
+            var type = _wordSize.PointerSize == 8 ? tag switch
+            {
+                0 or 1 => PointerFix.FixType.DbIdRef,
+                2 => PointerFix.FixType.Unresolved,
+                3 => PointerFix.FixType.Direct,
+                4 => PointerFix.FixType.Type,
+                5 => PointerFix.FixType.Generic,
+                _ => throw new InvalidDataException($"Unknown x64 relocation tag {tag}"),
+            } : (PointerFix.FixType)(data & 3);
             if (!Enum.IsDefined(type))
             {
                 throw new InvalidDataException($"Unknown pointer fix type {data & 3} at fix entry {i}");
             }
 
-            fixes.Add(address, new PointerFix(type, (data & 4) > 0, value));
+            if (!rootsOnly || type == PointerFix.FixType.Type)
+            {
+                fixes.Add(address, new PointerFix(type, _wordSize.PointerSize == 8 ? tag == 1 : (data & 4) > 0, value));
+            }
         }
 
         return fixes;

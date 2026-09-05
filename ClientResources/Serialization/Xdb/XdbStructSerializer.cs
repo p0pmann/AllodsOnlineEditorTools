@@ -41,6 +41,9 @@ public class XdbStructSerializer(XdbStructSerializerOptions options, ResourceSer
 
     internal Type ResolveXdbType(string xdbName) => Context.ResolveByXdbName(xdbName);
 
+    internal string GetTextFileHref(string field, string path) =>
+        Context.TextFileHref?.Invoke(field, path) ?? (string.IsNullOrEmpty(path) ? "" : $"/{path}");
+
     protected override XElement BeginObject(string name) => new(name);
 
     protected override void AddField(XElement objectNode, string name, XElement? child)

@@ -4,6 +4,21 @@ public readonly record struct BinDatabase(DatabaseMetadata Metadata, byte[] Data
 
 public class DatabaseMetadata
 {
+    private long[]? _rootOffsets;
+    private readonly Lock _rootOffsetsLock = new();
+
+    internal long NextRootOffset(long offset, long dataLength)
+    {
+        lock (_rootOffsetsLock)
+        {
+            _rootOffsets ??= Fixes.Where(p => p.Value.Type == PointerFix.FixType.Type).Select(p => p.Key).Order().ToArray();
+        }
+        var index = Array.BinarySearch(_rootOffsets, offset);
+        index = index < 0 ? ~index : index + 1;
+        return index < _rootOffsets.Length ? _rootOffsets[index] : dataLength;
+    }
+
+    public int PointerSize { get; init; } = 4;
     /// <summary>Database's raw version bytes.</summary>
     public required byte[] Version { get; init; }
 

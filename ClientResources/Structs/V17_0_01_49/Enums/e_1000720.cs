@@ -1,0 +1,55 @@
+// Generated from client serializer evidence. Regenerate with EditorCLI generate structs.
+// ReSharper disable InconsistentNaming
+#nullable disable
+using System.Numerics;
+using AllodsOnlineEditorTools.ClientResources.DataTypes;
+using AllodsOnlineEditorTools.ClientResources.Serialization;
+using AllodsOnlineEditorTools.ClientResources.Serialization.Bin;
+using AllodsOnlineEditorTools.ClientResources.Serialization.Xdb;
+using JetBrains.Annotations;
+
+namespace AllodsOnlineEditorTools.ClientResources.Structs.V17_0_01_49.Enums;
+
+public enum @e_1000720
+{
+    @GEM_SLOT_001 = 0,
+    @GEM_SLOT_002 = 1,
+    @GEM_SLOT_003 = 2,
+    @GEM_SLOT_004 = 3,
+    @GEM_SLOT_005 = 4,
+    @GEM_SLOT_006 = 5,
+    @GEM_SLOT_007 = 6,
+    @GEM_SLOT_008 = 7,
+    @GEM_SLOT_009 = 8,
+    @GEM_SLOT_010 = 9,
+    @GEM_SLOT_011 = 10,
+    @GEM_SLOT_012 = 11,
+    @GEM_SLOT_013 = 12,
+    @GEM_SLOT_014 = 13,
+    @GEM_SLOT_015 = 14,
+    @GEM_SLOT_016 = 15,
+    @GEM_SLOT_017 = 16,
+    @GEM_SLOT_018 = 17,
+    @GEM_SLOT_019 = 18,
+    @GEM_SLOT_020 = 19,
+    @GEM_SLOT_021 = 20,
+    @GEM_SLOT_022 = 21,
+    @GEM_SLOT_023 = 22,
+    @GEM_SLOT_024 = 23,
+    @GEM_SLOT_025 = 24,
+    @GEM_SLOT_026 = 25,
+    @GEM_SLOT_027 = 26,
+    @GEM_SLOT_028 = 27,
+    @GEM_SLOT_029 = 28,
+    @GEM_SLOT_030 = 29,
+    @GEM_SLOT_031 = 30,
+    @GEM_SLOT_032 = 31,
+    @GEM_SLOT_033 = 32,
+    @GEM_SLOT_034 = 33,
+    @GEM_SLOT_035 = 34,
+    @GEM_SLOT_036 = 35,
+    @GEM_SLOT_037 = 36,
+    @GEM_SLOT_038 = 37,
+    @GEM_SLOT_039 = 38,
+    @GEM_SLOT_040 = 39,
+}

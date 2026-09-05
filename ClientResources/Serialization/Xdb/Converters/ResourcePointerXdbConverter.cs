@@ -11,7 +11,7 @@ internal class ResourcePointerXdbConverter : XdbConverter<ResourcePointer>
     {
         if (Equals(value, ResourcePointer.Empty))
         {
-            return null;
+            return new XElement(elementName, new XAttribute("href", ""));
         }
 
         if (value.Type is null)

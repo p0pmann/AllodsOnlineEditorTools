@@ -12,17 +12,40 @@ internal class ResourcePointerBinaryConverter : BinaryConverter<ResourcePointer>
     {
         if (!reader.TryGetPointerFix(offset, out var pointerFix))
         {
+            if (context.PointerSize == 8 && reader.ReadWord(offset) != 0)
+            {
+                throw new InvalidDataException($"Non-null pointer at {offset} has no relocation");
+            }
+
             return ResourcePointer.Empty;
         }
 
         Debug.Assert(reader.ReadInt(offset) == 0);
         //BUG: Debug.Assert(reader.ReadInt(offset + 4) == 0);
-        Debug.Assert(pointerFix.Type == PointerFix.FixType.DbIdRef);
+        if (pointerFix.Type == PointerFix.FixType.Unresolved)
+        {
+            if (context.LocalizedDatabase is not { } localized || context.LocalizedResourceOffsets is not { } offsets ||
+                pointerFix.Value < 0 || pointerFix.Value >= offsets.Count || offsets[(int)pointerFix.Value] is not { } target)
+            {
+                throw new InvalidDataException($"Unresolved localized resource {pointerFix.Value} at {offset}");
+            }
+
+            return Resolve(localized.Metadata, target, context);
+        }
+        if (pointerFix.Type != PointerFix.FixType.DbIdRef)
+        {
+            throw new InvalidDataException($"Invalid resource relocation at {offset}: {pointerFix.Type}");
+        }
 
         var database = pointerFix.External ? context.MainDatabaseMetadata : context.CurrentDatabaseMetadata;
-        var file = database.DbId2File[pointerFix.Value];
+        return Resolve(database, pointerFix.Value, context);
+    }
 
-        var structName = database.GetStructType(pointerFix.Value) ?? throw new InvalidOperationException($"No struct type for DbId {pointerFix.Value}.");
+    private static ResourcePointer Resolve(DatabaseMetadata database, long target, BinaryStructSerializerContext context)
+    {
+        var file = database.DbId2File[target];
+
+        var structName = database.GetStructType(target) ?? throw new InvalidOperationException($"No struct type for DbId {target}.");
         var type = context.TypeResolver.TryResolveByName(structName, out var impl) ? impl : null;
         return new ResourcePointer(file, type);
     }

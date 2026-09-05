@@ -8,6 +8,7 @@ public sealed class ResourceSerializationContext
 
     public IReadOnlyDictionary<(Type DeclaringType, string FieldName), Type?>? EnumRefOverrides { get; init; }
     public StructTypeResolver? TypeResolver { get; init; }
+    public Func<string, string, string>? TextFileHref { get; init; }
 
     public Type? ResolveEnumRef(StructField field)
     {
