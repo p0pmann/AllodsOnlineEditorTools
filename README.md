@@ -176,10 +176,19 @@ EditorCLI pack unpack <Bin> <Packs> --localization <Bin/pack.eng_eu.loc> \
 
 Embedded names take precedence. Ambiguous IDs or payload matches, changed types, and output-path
 collisions are skipped. Unmatched roots receive stable
-`__generated/<database>/obj-<id>.xdb` paths, or an offset-based name when no object
-ID exists. Resource references use the same recovered or fallback paths.
+`_unnamed/<type>/id_<resource-id>.xdb` paths, or `blob_<hex-offset>.xdb` when no
+resource ID exists. Map and localization database names prefix the filename,
+for example `_unnamed/TextureAtlas/Maps_Remort__blob_b0.xdb`, to avoid collisions.
+Resource references use the same recovered or fallback paths.
 `unpack-report.json` includes pathname recovery counts per database. `--dry-run`
 also performs recovery and reports the counts without writing files.
+
+Unnamed resources are written under `<output>/_unnamed`.
+
+XDB exports keep empty reference fields and write localized text beside its resource,
+for example `PlatinumCoin.Name.txt` and `PlatinumCoin.Description.txt`, with relative
+`href` values. Repeated field names receive numeric suffixes. Text files use UTF-16
+with a byte-order mark. JDB exports keep the indexed `__localized` text paths.
 
 ## Planned features
 

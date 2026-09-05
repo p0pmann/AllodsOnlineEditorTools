@@ -146,9 +146,12 @@ public class XdbStructSerializerWriteTests
         Xml(Field(new NullablePointer(new SampleParams()), "params", typeof(NullablePointer))),
         Is.EqualTo("<params type=\"CommonMaterialParams\"><intensity>5</intensity></params>"));
 
-    // A null pointer produces no element at all (the field is skipped).
     [Test]
-    public void NullNullablePointer_IsSkipped() => Assert.That(Field(NullablePointer.Empty, "params", typeof(NullablePointer)), Is.Null);
+    public void NullNullablePointer_SerializesEmptyElement() => Assert.That(Xml(Field(NullablePointer.Empty, "params", typeof(NullablePointer))), Is.EqualTo("<params />"));
+
+    [Test]
+    public void EmptyResourcePointer_SerializesEmptyHref() =>
+        Assert.That(Xml(Field(ResourcePointer.Empty, "image", typeof(ResourcePointer))), Is.EqualTo("<image href=\"\" />"));
 
     // ---------------------------------------------------------------- Math types
 

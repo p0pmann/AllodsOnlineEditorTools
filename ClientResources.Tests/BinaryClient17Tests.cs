@@ -200,7 +200,7 @@ public class BinaryClient17Tests
         DatabaseExport.AssignMissingPaths(db, "pack.bin");
         DatabaseExport.AssignMissingPaths(db, "pack.bin");
         Assert.That(metadata.DbId2File[0], Is.EqualTo("known.xdb"));
-        Assert.That(metadata.DbId2File[64], Is.EqualTo("__generated/pack/offset-64.xdb"));
+        Assert.That(metadata.DbId2File[64], Is.EqualTo("_unnamed/Unknown/blob_40.xdb"));
         Assert.That(metadata.DbId2File.ContainsKey(96), Is.False);
     }
 }

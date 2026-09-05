@@ -161,6 +161,8 @@ internal sealed class UnpackCommand(ILogger<UnpackCommand> logger, ILoggerFactor
         var textFiles = new ConcurrentDictionary<string, string>();
         var failures = new ConcurrentDictionary<string, string>();
         var exported = 0;
+        var unnamed = 0;
+        var semanticTextFiles = 0;
         var caster = settings.CastToVersion is null ? null : CreateCaster(settings.CastToVersion, version, databases, settings.Strict);
 
         if (!settings.Dry)
@@ -220,9 +222,6 @@ internal sealed class UnpackCommand(ILogger<UnpackCommand> logger, ILoggerFactor
                 TextFileRead = (name, text) => textFiles.TryAdd(name, text),
             };
 
-            var resourceContext = new ResourceSerializationContext { EnumRefOverrides = caster?.EnumRefOverrides, };
-            var serializer = CreateSerializer(settings.Format, resourceContext, loggerFactory);
-
             Parallel.ForEach(databaseMetadata.DbId2File, fileEntry =>
             {
                 if (settings.Type is not null && databaseMetadata.GetStructType(fileEntry.Key) != settings.Type)
@@ -232,6 +231,14 @@ internal sealed class UnpackCommand(ILogger<UnpackCommand> logger, ILoggerFactor
                 }
                 try
                 {
+                    var sidecars = settings.Format == OutputFormat.Xdb && localization is not null
+                        ? new XdbResourceTextFiles(fileEntry.Value, name => textFiles.GetValueOrDefault(name)) : null;
+                    var resourceContext = new ResourceSerializationContext
+                    {
+                        EnumRefOverrides = caster?.EnumRefOverrides,
+                        TextFileHref = sidecars is null ? null : sidecars.GetHref,
+                    };
+                    var serializer = CreateSerializer(settings.Format, resourceContext, loggerFactory);
                     if (caster is not null)
                     {
                         var structName = databaseMetadata.GetStructType(fileEntry.Key);
@@ -258,10 +265,22 @@ internal sealed class UnpackCommand(ILogger<UnpackCommand> logger, ILoggerFactor
                             var path = OutputPath(settings.OutputDirectory, Path.ChangeExtension(fileEntry.Value, extension));
                             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                             File.WriteAllText(path, content);
+                            if (sidecars is not null)
+                            {
+                                foreach (var (name, text) in sidecars.Files)
+                                {
+                                    File.WriteAllText(OutputPath(settings.OutputDirectory, name), text, Encoding.Unicode);
+                                }
+                            }
                         }
                     }
 
                     Interlocked.Increment(ref exported);
+                    Interlocked.Add(ref semanticTextFiles, sidecars?.Files.Count ?? 0);
+                    if (DatabaseExport.IsUnnamedPath(fileEntry.Value))
+                    {
+                        Interlocked.Increment(ref unnamed);
+                    }
                 }
                 catch (Exception error) when (error is InvalidDataException or InvalidOperationException or ArgumentException or KeyNotFoundException or OverflowException or NotSupportedException)
                 {
@@ -273,16 +292,29 @@ internal sealed class UnpackCommand(ILogger<UnpackCommand> logger, ILoggerFactor
 
         if (!settings.Dry)
         {
-            foreach (var (name, text) in textFiles)
+            foreach (var (name, text) in settings.Format == OutputFormat.Xdb ? [] : textFiles)
             {
                 var path = OutputPath(settings.OutputDirectory, name);
                 Directory.CreateDirectory(Path.GetDirectoryName(path)!);
                 File.WriteAllText(path, text, Encoding.Unicode);
             }
             File.WriteAllText(OutputPath(settings.OutputDirectory, "unpack-report.json"),
-                JsonSerializer.Serialize(new { exported, failed = failures.Count, failures, pathRecovery }, new JsonSerializerOptions { WriteIndented = true }));
+                JsonSerializer.Serialize(new
+                {
+                    exported,
+                    named = exported - unnamed,
+                    unnamed,
+                    localizedTextFiles = settings.Format == OutputFormat.Xdb ? semanticTextFiles : textFiles.Count,
+                    failed = failures.Count,
+                    failures,
+                    pathRecovery,
+                    outputDirectory = Path.GetFullPath(settings.OutputDirectory),
+                    unnamedOutputDirectory = Path.GetFullPath(Path.Combine(settings.OutputDirectory, "_unnamed")),
+                }, new JsonSerializerOptions { WriteIndented = true }));
         }
-        logger.LogInformation("Decoded {Count} resources; {Failed} failed; {Texts} localized text files", exported, failures.Count, textFiles.Count);
+        logger.LogInformation("Decoded {Count} resources; {Failed} failed; {Texts} localized text files", exported, failures.Count,
+            settings.Format == OutputFormat.Xdb ? semanticTextFiles : textFiles.Count);
+        logger.LogInformation("Resource paths: {Named} named; {Unnamed} unnamed", exported - unnamed, unnamed);
         foreach (var failure in failures.Take(20))
         {
             logger.LogWarning("{Resource}: {Reason}", failure.Key, failure.Value);

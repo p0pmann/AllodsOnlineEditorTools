@@ -9,23 +9,34 @@ public static class DatabaseExport
     {
         var metadata = database.Metadata;
         var stem = Path.GetFileNameWithoutExtension(databaseName);
-        foreach (var (offset, fix) in metadata.Fixes)
+        var prefix = stem.Equals("pack", StringComparison.OrdinalIgnoreCase) ? "" : stem + "__";
+        var claimed = metadata.DbId2File.Values.Where(p => !string.IsNullOrWhiteSpace(p))
+            .Select(p => Path.ChangeExtension(p.Replace('\\', '/'), ".xdb")).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var (offset, fix) in metadata.Fixes.OrderBy(p => p.Key))
         {
             if (fix.Type != PointerFix.FixType.Type || metadata.DbId2File.TryGetValue(offset, out var existing) && !string.IsNullOrWhiteSpace(existing))
             {
                 continue;
             }
 
-            var identity = metadata.DbId2ObjId?.TryGetValue(offset, out var id) == true ? $"obj-{id}" : $"offset-{offset}";
-            var path = $"__generated/{stem}/{identity}.xdb";
-            if (metadata.File2DbId.ContainsKey(path))
+            var type = metadata.GetStructType(offset) is { Length: > 0 } name ? name : "Unknown";
+            var identity = metadata.DbId2ResId.TryGetValue(offset, out var id) && id != 0 ? $"id_{unchecked((uint)id)}" : $"blob_{offset:x}";
+            var path = $"_unnamed/{type}/{prefix}{identity}.xdb";
+            if (!claimed.Add(path))
             {
-                throw new InvalidDataException($"Generated path collision: {path}");
+                path = $"_unnamed/{type}/{prefix}{identity}__blob_{offset:x}.xdb";
+                var suffix = 1;
+                while (!claimed.Add(path))
+                {
+                    path = $"_unnamed/{type}/{prefix}{identity}__blob_{offset:x}_{suffix++}.xdb";
+                }
             }
 
             AssignPath(metadata, offset, path);
         }
     }
+
+    public static bool IsUnnamedPath(string path) => path.Replace('\\', '/').StartsWith("_unnamed/", StringComparison.Ordinal);
 
     internal static void AssignPath(DatabaseMetadata metadata, long offset, string path)
     {

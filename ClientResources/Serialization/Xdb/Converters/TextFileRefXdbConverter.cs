@@ -7,7 +7,7 @@ internal class TextFileRefXdbConverter : XdbConverter<TextFileRef>
 {
     protected override XElement WriteValue(XdbStructSerializer serializer, string elementName, TextFileRef value)
     {
-        var href = string.IsNullOrEmpty(value.Name) ? "" : $"/{value.Name}";
+        var href = serializer.GetTextFileHref(elementName, value.Name);
         return new XElement(elementName, new XAttribute("href", href));
     }
 

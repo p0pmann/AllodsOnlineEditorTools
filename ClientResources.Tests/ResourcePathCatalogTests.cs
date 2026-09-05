@@ -224,7 +224,7 @@ public class ResourcePathCatalogTests
         target.DbId2ObjId!.Add(64, 123);
         Assert.That(Catalog(reference).RestoreMissingPaths(target, "pack.bin").Unmatched, Is.EqualTo(1));
         DatabaseExport.AssignMissingPaths(new(target, []), "pack.bin");
-        Assert.That(target.DbId2File[64], Is.EqualTo("__generated/pack/obj-123.xdb"));
+        Assert.That(target.DbId2File[64], Is.EqualTo("_unnamed/Example/blob_40.xdb"));
     }
 
     [Test]
@@ -287,7 +287,7 @@ public class ResourcePathCatalogTests
         Root(target, 64, 1);
         Assert.That(Catalog(reference).RestoreMissingPaths(target, "pack.bin").InvalidPaths, Is.EqualTo(1));
         DatabaseExport.AssignMissingPaths(new(target, []), "pack.bin");
-        Assert.That(target.DbId2File[64], Is.EqualTo("__generated/pack/offset-64.xdb"));
+        Assert.That(target.DbId2File[64], Is.EqualTo("_unnamed/Example/id_1.xdb"));
     }
 
     [Test]
@@ -296,7 +296,7 @@ public class ResourcePathCatalogTests
         var metadata = Metadata(4);
         Root(metadata, 16, null, "");
         DatabaseExport.AssignMissingPaths(new(metadata, []), "pack.bin");
-        Assert.That(metadata.DbId2File[16], Is.EqualTo("__generated/pack/offset-16.xdb"));
+        Assert.That(metadata.DbId2File[16], Is.EqualTo("_unnamed/Example/blob_10.xdb"));
     }
 
     [Test]
@@ -318,5 +318,42 @@ public class ResourcePathCatalogTests
         target2.DbId2File.Add(64, "Same.xdb");
         target2.File2DbId.Add("Same.xdb", 64);
         Assert.That(catalog.RestoreMissingPaths(targets).Sum(r => r.PathConflicts), Is.EqualTo(1));
+    }
+
+    [TestCase("pack.bin", "_unnamed/Example/id_123.xdb", "_unnamed/Example/blob_b0.xdb")]
+    [TestCase("Maps_Remort.bin", "_unnamed/Example/Maps_Remort__id_123.xdb", "_unnamed/Example/Maps_Remort__blob_b0.xdb")]
+    [TestCase("pack.eng_eu.bin", "_unnamed/Example/pack.eng_eu__id_123.xdb", "_unnamed/Example/pack.eng_eu__blob_b0.xdb")]
+    public void UnnamedPathsUseResourceIdsAndDatabaseScopedBlobOffsets(string databaseName, string idPath, string blobPath)
+    {
+        var metadata = Metadata();
+        Root(metadata, 64, 123);
+        Root(metadata, 176, null);
+        metadata.DbId2ObjId!.Add(64, 999);
+        metadata.Fixes.Add(0, new(PointerFix.FixType.DbIdRef, false, 64));
+        DatabaseExport.AssignMissingPaths(new(metadata, []), databaseName);
+        var context = new BinaryStructSerializerContext
+        { CurrentDatabaseMetadata = metadata, MainDatabaseMetadata = metadata, TypeResolver = StructTypeResolver.FromTypes(), FileRefKind = FileRefKind.PakFileRef };
+        var reader = new BinaryStructReader(new byte[256], context, BinarySerializerOptions.Default);
+        var pointer = (ResourcePointer)reader.ReadField(0, typeof(ResourcePointer))!;
+        Assert.That(metadata.DbId2File[64], Is.EqualTo(idPath));
+        Assert.That(metadata.DbId2File[176], Is.EqualTo(blobPath));
+        Assert.That(pointer.Href, Is.EqualTo(idPath));
+    }
+
+    [Test]
+    public void DuplicateResourceIdsAndExistingNamesNeverOverwriteOtherRoots()
+    {
+        var metadata = Metadata();
+        Root(metadata, 16, null, "_unnamed/example/ID_123.jdb");
+        Root(metadata, 32, 123);
+        Root(metadata, 64, 123);
+        var db = new BinDatabase(metadata, []);
+        DatabaseExport.AssignMissingPaths(db, "pack.bin");
+        var paths = metadata.DbId2File.Values.ToArray();
+        DatabaseExport.AssignMissingPaths(db, "pack.bin");
+        Assert.That(metadata.DbId2File[16], Is.EqualTo("_unnamed/example/ID_123.jdb"));
+        Assert.That(metadata.DbId2File[32], Is.EqualTo("_unnamed/Example/id_123__blob_20.xdb"));
+        Assert.That(metadata.DbId2File[64], Is.EqualTo("_unnamed/Example/id_123__blob_40.xdb"));
+        Assert.That(metadata.DbId2File.Values, Is.EqualTo(paths));
     }
 }
